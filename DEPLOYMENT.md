@@ -108,3 +108,4 @@ The Express backend (`apps/backend`) can be deployed to any Node.js hosting plat
     - `DIRECT_URL`
     - `CORS_ORIGIN=https://mandi-office.vercel.app` (your Vercel URL)
     - `JWT_SECRET`
+
