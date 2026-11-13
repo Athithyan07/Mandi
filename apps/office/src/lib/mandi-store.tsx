@@ -304,6 +304,30 @@ interface MandiStoreContextType {
 
 const MandiStoreContext = createContext<MandiStoreContextType | null>(null)
 
+function getApiBaseUrl(): string | null {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL
+  if (envUrl && envUrl.trim() !== "") {
+    // If running on a public remote host (e.g. vercel.app), never call localhost
+    if (typeof window !== "undefined") {
+      const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+      if (!isLocal && (envUrl.includes("localhost") || envUrl.includes("127.0.0.1"))) {
+        return null
+      }
+    }
+    return envUrl.replace(/\/$/, "")
+  }
+
+  // Only allow localhost fallback when the frontend is running locally
+  if (typeof window !== "undefined") {
+    const isLocal = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    if (isLocal) {
+      return "http://localhost:4000"
+    }
+  }
+
+  return null
+}
+
 export const MandiStoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Persisted app mode ("office" | "receiver" | "driver")
   const [mode, setModeState] = useState<AppMode>("office")
@@ -327,24 +351,27 @@ export const MandiStoreProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const refreshRealtimeData = async () => {
     setIsRefreshing(true)
     try {
-      const headers: Record<string, string> = { "Content-Type": "application/json" }
-      if (mode === "office") {
-        headers["x-user-role"] = officeAuth?.role || "OWNER"
-      } else if (mode === "driver") {
-        headers["x-user-role"] = "DRIVER"
-        if (driverAuth?.driverId) headers["x-driver-id"] = driverAuth.driverId
-      } else if (mode === "receiver") {
-        headers["x-user-role"] = "RECEIVER"
-        if (receiverAuth?.customerId) headers["x-customer-id"] = receiverAuth.customerId
-      }
+      const apiBase = getApiBaseUrl()
+      if (apiBase) {
+        const headers: Record<string, string> = { "Content-Type": "application/json" }
+        if (mode === "office") {
+          headers["x-user-role"] = officeAuth?.role || "OWNER"
+        } else if (mode === "driver") {
+          headers["x-user-role"] = "DRIVER"
+          if (driverAuth?.driverId) headers["x-driver-id"] = driverAuth.driverId
+        } else if (mode === "receiver") {
+          headers["x-user-role"] = "RECEIVER"
+          if (receiverAuth?.customerId) headers["x-customer-id"] = receiverAuth.customerId
+        }
 
-      const res = await fetch("http://localhost:4000/api/orders", { headers }).catch(() => null)
-      if (res && res.ok) {
-        const data = await res.json()
-        if (data && Array.isArray(data.data)) {
-          setOrders(data.data)
-        } else if (data && Array.isArray(data.orders)) {
-          setOrders(data.orders)
+        const res = await fetch(`${apiBase}/api/orders`, { headers }).catch(() => null)
+        if (res && res.ok) {
+          const data = await res.json()
+          if (data && Array.isArray(data.data)) {
+            setOrders(data.data)
+          } else if (data && Array.isArray(data.orders)) {
+            setOrders(data.orders)
+          }
         }
       }
     } catch {
@@ -906,16 +933,19 @@ export const MandiStoreProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     )
 
     // Sync approval with backend
-    try {
-      fetch(`http://localhost:4000/api/orders/${orderId}/approve`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "x-user-role": officeAuth?.role || "OWNER",
-        },
-      }).catch(() => {})
-    } catch {
-      // ignore
+    const apiBase = getApiBaseUrl()
+    if (apiBase) {
+      try {
+        fetch(`${apiBase}/api/orders/${orderId}/approve`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-role": officeAuth?.role || "OWNER",
+          },
+        }).catch(() => {})
+      } catch {
+        // ignore
+      }
     }
 
     logAudit(
@@ -1003,22 +1033,25 @@ export const MandiStoreProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           )
         }
 
-        // Synchronize with backend API on port 4000
-        try {
-          fetch(`http://localhost:4000/api/orders/${orderId}/dispatch`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-user-role": officeAuth?.role || "OWNER",
-            },
-            body: JSON.stringify({
-              vehicleNo: "KA-01-AB-1234",
-              driver: "Ramesh Kumar",
-              notes,
-            }),
-          }).catch(() => {})
-        } catch {
-          // ignore
+        // Synchronize with backend API
+        const apiBase = getApiBaseUrl()
+        if (apiBase) {
+          try {
+            fetch(`${apiBase}/api/orders/${orderId}/dispatch`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "x-user-role": officeAuth?.role || "OWNER",
+              },
+              body: JSON.stringify({
+                vehicleNo: "KA-01-AB-1234",
+                driver: "Ramesh Kumar",
+                notes,
+              }),
+            }).catch(() => {})
+          } catch {
+            // ignore
+          }
         }
       }
     }
@@ -1267,24 +1300,27 @@ export const MandiStoreProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     )
 
     // Synchronize with backend API
-    try {
-      fetch("http://localhost:4000/api/stock/adjust", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-user-role": officeAuth?.role || "OWNER",
-        },
-        body: JSON.stringify({
-          productId,
-          productName: targetName,
-          warehouse,
-          qty: numQty,
-          reason,
-          reference,
-        }),
-      }).catch(() => {})
-    } catch {
-      // ignore
+    const apiBase = getApiBaseUrl()
+    if (apiBase) {
+      try {
+        fetch(`${apiBase}/api/stock/adjust`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-role": officeAuth?.role || "OWNER",
+          },
+          body: JSON.stringify({
+            productId,
+            productName: targetName,
+            warehouse,
+            qty: numQty,
+            reason,
+            reference,
+          }),
+        }).catch(() => {})
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -1407,26 +1443,29 @@ export const MandiStoreProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     )
 
     // 4. Synchronize POD with backend API
-    try {
-      fetch("http://localhost:4000/api/delivery/pod", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-user-role": "DRIVER",
-          "x-driver-id": driverAuth?.driverId || "driver-1",
-        },
-        body: JSON.stringify({
-          tripId,
-          orderId,
-          receiverName,
-          signature,
-          shortageNote,
-          collectedAmount,
-          method: paymentMethod,
-        }),
-      }).catch(() => {})
-    } catch {
-      // ignore
+    const apiBase = getApiBaseUrl()
+    if (apiBase) {
+      try {
+        fetch(`${apiBase}/api/delivery/pod`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-role": "DRIVER",
+            "x-driver-id": driverAuth?.driverId || "driver-1",
+          },
+          body: JSON.stringify({
+            tripId,
+            orderId,
+            receiverName,
+            signature,
+            shortageNote,
+            collectedAmount,
+            method: paymentMethod,
+          }),
+        }).catch(() => {})
+      } catch {
+        // ignore
+      }
     }
   }
 
